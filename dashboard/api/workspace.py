@@ -103,7 +103,8 @@ def list_artifacts(before: Optional[int] = None, session_ids: Optional[List[str]
         return index.list_artifacts(conn, before=before, session_ids=ids, group=kind or None,
                                     query=q or "", limit=index.DEFAULT_LIMIT if limit is None else limit,
                                     include_missing=missing != "hide",
-                                    workstreams=[] if ids else _workstreams(get_hermes_home()))
+                                    workstreams=[] if ids else _workstreams(get_hermes_home()),
+                                    page_root=str(Path(get_hermes_home()) / "cache" / "conduit-markdown"))
     finally:
         conn.close()
 

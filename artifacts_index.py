@@ -30,6 +30,7 @@ plugin package.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -69,6 +70,7 @@ _IMAGE = {"png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "svg", "ti
 _VIDEO = {"mp4", "mov", "m4v", "webm", "mkv", "avi"}
 _AUDIO = {"mp3", "m4a", "wav", "ogg", "opus", "flac", "aac", "caf"}
 _PAGE = {"html", "htm", "xhtml"}
+_MARKDOWN = {"md", "markdown", "mdown", "mkd"}
 _DOCUMENT = {"pdf", "txt", "md", "markdown", "csv", "tsv", "json", "xml", "yaml", "yml", "rtf",
              "doc", "docx", "xls", "xlsx", "ppt", "pptx", "key", "numbers", "pages", "odt", "ods",
              "odp", "epub", "ics", "vcf", "gpx", "kml", "kmz", "zip", "tar", "gz", "tgz", "7z"}
@@ -111,6 +113,26 @@ def kind_for(path: str) -> str:
 def _extension(path: str) -> str:
     name = re.split(r"[/\\]", path.split("?", 1)[0].split("#", 1)[0])[-1]
     return name.rsplit(".", 1)[1].lower() if "." in name else ""
+
+
+_markdown_page_module: Any = None
+
+
+def _markdown_pages() -> Any:
+    """markdown_page.py beside this file, loaded once; None when unavailable."""
+    global _markdown_page_module
+    if _markdown_page_module is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "markdown_page.py")
+        spec = importlib.util.spec_from_file_location("conduit_push_markdown_page", path)
+        if spec is None or spec.loader is None or not os.path.isfile(path):
+            return None
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            return None
+        _markdown_page_module = module
+    return _markdown_page_module
 
 
 def _unquote(value: str) -> str:
@@ -277,7 +299,7 @@ def row_items(role: str, content: Any, tool_calls: Any, tool_name: Any) -> list:
 
 
 def _describe(source: str, kind: str, target: str, label: str, row: sqlite3.Row, title: str,
-              stat: Callable[[str], Optional[int]]) -> Optional[dict]:
+              stat: Callable[[str], Optional[int]], page_root: Optional[str] = None) -> Optional[dict]:
     item: dict = {
         "kind": kind,
         "source": source,
@@ -310,10 +332,23 @@ def _describe(source: str, kind: str, target: str, label: str, row: sqlite3.Row,
         return None
     item["path"] = target
     item["name"] = _clip(_name(target), MAX_NAME_CHARS)
+    lookup = target.split("?", 1)[0].split("#", 1)[0]
     size = stat(target)
+    if size is None and lookup != target:
+        size = stat(lookup)
     item["exists"] = size is not None
     if size is not None:
         item["size"] = size
+    if kind == "document" and page_root and size is not None and _extension(target) in _MARKDOWN:
+        pages = _markdown_pages()
+        page = pages.page_for(target, page_root) if pages is not None else None
+        if page:
+            # Conduit draws a page in its built-in HTML viewer; the original
+            # stays the file the user asked for, with its name and size.
+            item["kind"] = "page"
+            item["path"] = page
+            item["original_kind"] = "document"
+            item["original_path"] = target
     return item
 
 
@@ -326,7 +361,7 @@ def _file_size(path: str) -> Optional[int]:
 
 
 def _matches(item: dict, kinds: Optional[tuple], query: str) -> bool:
-    if kinds is not None and item["kind"] not in kinds:
+    if kinds is not None and item["kind"] not in kinds and item.get("original_kind") not in kinds:
         return False
     if query:
         haystack = " ".join((item.get("name", ""), item.get("session_title", ""), item.get("path", ""),
@@ -459,6 +494,7 @@ def list_artifacts(conn: sqlite3.Connection, *, before: Optional[int] = None,
                    include_missing: bool = True,
                    workstreams: Iterable[str] = (),
                    stat: Callable[[str], Optional[int]] = _file_size,
+                   page_root: Optional[str] = None,
                    window_rows: int = WINDOW_ROWS, max_scan_rows: int = MAX_SCAN_ROWS) -> dict:
     """One page of artifacts, newest first, and where the next page starts
     (``next_before``, None once the history is read to its start). One chat
@@ -501,7 +537,8 @@ def list_artifacts(conn: sqlite3.Connection, *, before: Optional[int] = None,
             if key in seen:
                 continue
             item = _describe(source, kind, target, label, row,
-                             title_for(str(row["session_id"]), row["title"]), stat)
+                             title_for(str(row["session_id"]), row["title"]), stat,
+                             page_root=page_root)
             if item is not None and not include_missing and item.get("exists") is False:
                 # Gone at its newest mention, gone at every older one, so
                 # each gone path is checked once.

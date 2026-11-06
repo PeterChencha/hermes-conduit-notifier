@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import pytest
 import pathlib
 import sqlite3
 import sys
@@ -812,3 +813,48 @@ def test_a_quoted_path_whose_folder_ends_in_a_separator_is_tried_whole(tmp_path)
     assert index.resolve_name(conn, ["s3"], "old.md", exists=real.__contains__)["path"] == "/data/a;/b/old.md"
     # Two paths: the whole run isn't a file, so its pieces still answer.
     assert index.resolve_name(conn, ["s2"], "old.md", exists=real.__contains__)["path"] == "/x/old.md"
+
+
+def test_markdown_is_listed_as_a_page_and_stays_under_files(tmp_path, monkeypatch):
+    pytest.importorskip("markdown_it")
+    _no_gateway(monkeypatch)
+    target = tmp_path / "notes.md"
+    target.write_text("# Notes\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n", encoding="utf-8")
+    conn = _db(tmp_path / "home", [("s1", "assistant", f"MEDIA:{target}")])
+    pages = tmp_path / "pages"
+    item = _list(conn, page_root=str(pages), stat=index._file_size)["items"][0]
+    assert item["kind"] == "page" and item["name"] == "notes.md"
+    assert item["original_kind"] == "document" and item["original_path"] == str(target)
+    assert item["exists"] is True and item["size"] == target.stat().st_size
+    rendered = pathlib.Path(item["path"])
+    assert rendered.is_file() and "<table>" in rendered.read_text(encoding="utf-8")
+    assert [i["kind"] for i in _list(conn, group="files", page_root=str(pages), stat=index._file_size)["items"]] == ["page"]
+    assert [i["kind"] for i in _list(conn, group="pages", page_root=str(pages), stat=index._file_size)["items"]] == ["page"]
+
+
+def test_a_broken_markdown_file_stays_a_document(tmp_path, monkeypatch):
+    _no_gateway(monkeypatch)
+    target = tmp_path / "bad.md"
+    target.write_bytes(b"\xff\xfe# bad")
+    conn = _db(tmp_path / "home", [("s1", "assistant", f"MEDIA:{target}")])
+    item = _list(conn, page_root=str(tmp_path / "pages"), stat=index._file_size)["items"][0]
+    assert item["kind"] == "document" and item["exists"] is True
+
+
+def test_the_route_renders_markdown_pages(tmp_path, monkeypatch):
+    pytest.importorskip("markdown_it")
+    _no_gateway(monkeypatch)
+    target = tmp_path / "notes.md"
+    target.write_text("# Notes\n\n- [x] done\n", encoding="utf-8")
+    _db(tmp_path, [("s1", "assistant", f"MEDIA:{target}")]).close()
+    monkeypatch.setattr(sys.modules["hermes_constants"], "get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(api.workspace, "_artifacts_index", lambda: index)
+    app = FastAPI()
+    app.include_router(api.router, prefix=BASE)
+    client = TestClient(app)
+    body = client.get(f"{BASE}/artifacts").json()
+    assert body["ok"] is True
+    item = body["items"][0]
+    assert item["kind"] == "page" and item["name"] == "notes.md"
+    assert pathlib.Path(item["path"]).is_file()
+    assert (tmp_path / "cache" / "conduit-markdown").is_dir()

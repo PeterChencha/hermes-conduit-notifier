@@ -13,6 +13,13 @@ checks it). The format is fixed, because Conduit reads it:
 - One line per change, starting with `- `. Fixes say what goes wrong without
   the update. Plain words: these show on a phone.
 
+## 0.135.0 (2026-11-06)
+
+### New and improved
+- Markdown files in Artifacts now open as a formatted page in Conduit, with
+  tables, code, task lists and headings, instead of Quick Look's plain text.
+  The original file, its name and its Share path are unchanged.
+
 ## 0.134.4 (2026-11-06)
 
 ### Fixes
