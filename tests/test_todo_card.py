@@ -136,6 +136,23 @@ class TestPush(unittest.TestCase):
             self.assertTrue(todo_card.push(payload, "s1"))           # a new chat starts clean
             self.assertEqual(len(sent), 2)
 
+    def test_the_board_carries_a_title_and_markdown_of_its_own(self):
+        # The store refuses a board without them ("no_title"), however valid the checklist is.
+        sent = []
+
+        def fake_handle(args, session_id=None):
+            sent.append(args)
+            return json.dumps({"ok": True})
+
+        with mock.patch.object(todo_card.show_tool, "available", lambda: True), \
+                mock.patch.object(todo_card.show_tool, "handle", fake_handle):
+            self.assertTrue(todo_card.push({"todos": [row("a", "one", "in_progress")]}, "s5"))
+        args = sent[0]
+        self.assertEqual(args["title"], args["cards"][0]["title"])
+        self.assertLessEqual(len(args["title"]), 80)
+        self.assertIn("one", args["markdown"], "the fallback is the card's own text")
+        self.assertLessEqual(len(args["markdown"]), todo_card.MAX_MARKDOWN + 40)
+
     def test_a_phone_that_is_away_gets_no_card_and_no_error(self):
         with mock.patch.object(todo_card.show_tool, "available", lambda: False):
             self.assertFalse(todo_card.push({"todos": [row("a", "one")]}, "s2"))

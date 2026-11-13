@@ -27,7 +27,8 @@ from . import card_schema, show_tool
 logger = logging.getLogger(__name__)
 
 LIVE_NAME = "hermes-todo"
-MAX_ITEMS = 40                 # the checklist schema's own cap
+MAX_ITEMS = 40
+MAX_MARKDOWN = 6000          # a board's Markdown body, under the store's own limit                 # the checklist schema's own cap
 MAX_TEXT = 120                 # its per-item cap
 MAX_GROUP = 40                 # its per-group cap
 MAX_TITLE = 80                 # MAX_CARD_TITLE_CHARS
@@ -175,7 +176,14 @@ def push(result: Any, session_id: Any) -> bool:
         if not card_schema.normalize_cards([card], notes):
             logger.debug("conduit_push: todo card refused: %s", "; ".join(notes) or "no reason given")
             return False
-        answer = json.loads(show_tool.handle({"cards": [card]}, session_id=sid))
+        # A board needs its own title and a Markdown body: without them the store refuses the card
+        # ("no_title") even when the checklist itself is valid. The Markdown is what a Conduit that
+        # can't draw the card shows instead, so it is the card's own fallback, cut to a safe size.
+        markdown = card_schema.fallback_markdown([card])
+        if len(markdown) > MAX_MARKDOWN:
+            markdown = markdown[:MAX_MARKDOWN].rsplit("\n", 1)[0] + "\n\n_(cut to fit)_"
+        answer = json.loads(show_tool.handle({"cards": [card], "title": card["title"], "markdown": markdown},
+                                             session_id=sid))
         if not isinstance(answer, dict) or not answer.get("ok", True):
             return False
     except Exception:  # noqa: BLE001 - a card must never break a turn
