@@ -21,7 +21,7 @@ from . import (bot_chat_adopt, call_tool, call_watches, calls, chat_done_tool, c
                reply_sources, review_notices,
                room_asks, room_chats, room_cleanup, room_cutoff, room_free_busy, room_identity, room_invites,
                room_memory, room_planner, room_posts, room_rules, room_tool,
-               room_wakeups, screen_lock, settings_tool, show_tool, turn_surface, voice_archive, work_tool)
+               room_wakeups, screen_lock, settings_tool, show_tool, todo_card, turn_surface, voice_archive, work_tool)
 from .session_titles import bot_name as _bot_name, title as _session_title, titled as _titled
 from .client import enqueue
 from .present_store import PresentStore
@@ -417,6 +417,11 @@ def _post_tool_call(**kwargs: Any) -> None:
         _quietly(functools.partial(work_tool.step_ended, _text(kwargs.get("session_id")), kwargs.get("tool_name"),
                                    tool_call_id=kwargs.get("tool_call_id"), status=kwargs.get("status"),
                                    error_type=kwargs.get("error_type")))
+    # The phone draws the session's todo list as one live checklist card. The desktop's panel is
+    # per-session tool state handed to desktop clients as todo_state; Conduit read nothing of it, so
+    # the phone could see that a planning step ran and never what the plan was.
+    if not forks.inside() and kwargs.get("tool_name") in ("todo_list", "todo"):
+        _quietly(functools.partial(todo_card.push, kwargs.get("result"), _text(kwargs.get("session_id"))))
     # Every session counts, subagents and cron runs included (3.6).
     try:
         pulse.post_tool_call(**kwargs)
