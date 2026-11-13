@@ -75,3 +75,25 @@ def test_page_for_refuses_a_source_over_the_ceiling(tmp_path):
     source = tmp_path / "large.md"
     source.write_text("# " + "x" * 100, encoding="utf-8")
     assert page_module.page_for(str(source), str(tmp_path / "pages"), max_source_bytes=10) is None
+
+
+def test_an_older_markdown_it_without_gfm_like2_still_renders(monkeypatch, tmp_path):
+    # markdown-it-py 4.0.0 raises KeyError on the gfm-like2 preset; the page must still render
+    # (Windows' dashboard venv is on 4.0.0 while the Mac's is on 4.2.0), not fall back to raw text.
+    real = page_module.MarkdownIt
+    made = []
+
+    def older(name, options):
+        if name == "gfm-like2":
+            raise KeyError("Wrong `markdown-it` preset 'gfm-like2', check name")
+        made.append(name)
+        return real(name, options)
+
+    monkeypatch.setattr(page_module, "MarkdownIt", older)
+    monkeypatch.setattr(page_module, "_md", None)
+    source = tmp_path / "note.md"
+    source.write_text("# Title\n\n- [x] done\n", encoding="utf-8")
+    page = page_module.page_for(str(source), str(tmp_path / "cache"))
+    assert page, "a page must be rendered by the older preset"
+    assert made == ["gfm-like"], "the fallback goes to the nearest GFM preset"
+    assert "<h1" in pathlib.Path(page).read_text(encoding="utf-8").lower()

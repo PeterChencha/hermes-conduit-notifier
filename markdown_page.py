@@ -53,14 +53,27 @@ def _extension(path: str) -> str:
     return name.rsplit(".", 1)[1].lower() if "." in name else ""
 
 
+# gfm-like2 (tables, task lists, footnotes) is the preset the bridge wants, but it only exists in
+# newer markdown-it-py: 4.0.0 raises KeyError on it and the page silently degrades to raw text.
+# The older presets carry most of it, so a host on an older library still gets a page.
+_PRESETS = ("gfm-like2", "gfm-like", "commonmark", "default")
+
+
 def _parser():
     global _md
     if _md is None:
         if MarkdownIt is None:
             return None
         # html=False escapes raw HTML; linkify stays off so a bare path is not
-        # turned into a link. gfm-like2 adds tables, task lists and footnotes.
-        _md = MarkdownIt("gfm-like2", {"html": False, "linkify": False, "typographer": False})
+        # turned into a link.
+        for preset in _PRESETS:
+            try:
+                _md = MarkdownIt(preset, {"html": False, "linkify": False, "typographer": False})
+                break
+            except KeyError:      # this markdown-it-py doesn't know that preset
+                continue
+            except Exception:
+                return None
     return _md
 
 
