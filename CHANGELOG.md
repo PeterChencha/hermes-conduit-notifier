@@ -13,6 +13,12 @@ checks it). The format is fixed, because Conduit reads it:
 - One line per change, starting with `- `. Fixes say what goes wrong without
   the update. Plain words: these show on a phone.
 
+## 0.195.8 (2026-11-25)
+
+### New and improved
+
+- The phone draws the session's todo list as one live checklist card, refreshed in place whenever the list changes, instead of showing only a "planning" step while it runs.
+
 ## 0.195.7 (2026-11-24)
 
 ### Fixes
