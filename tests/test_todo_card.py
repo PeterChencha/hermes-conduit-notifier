@@ -170,5 +170,27 @@ class TestPush(unittest.TestCase):
             self.assertFalse(todo_card.push({"todos": [row("a", "one")]}, "s4"))
 
 
+class TestSave(unittest.TestCase):
+    def test_the_list_is_written_atomically_and_read_back(self):
+        import tempfile
+        from pathlib import Path
+
+        home = Path(tempfile.mkdtemp())
+        rows = [row("a", "one", "in_progress")]
+        with mock.patch.object(todo_card, "get_hermes_home", lambda: str(home)):
+            self.assertTrue(todo_card.save({"todos": rows}))
+        data = json.loads((home / todo_card.STATE_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(data, {"version": 1, "rows": rows})
+        self.assertFalse((home / "todo.json.tmp").exists(), "the temp file is replaced, not left behind")
+
+    def test_nothing_usable_to_save_is_not_an_error(self):
+        self.assertFalse(todo_card.save({"todos": []}))
+        self.assertFalse(todo_card.save("not json"))
+
+    def test_an_unwritable_home_never_raises_into_the_turn(self):
+        with mock.patch.object(todo_card, "get_hermes_home", side_effect=RuntimeError("boom")):
+            self.assertFalse(todo_card.save({"todos": [row("a", "one")]}))
+
+
 if __name__ == "__main__":
     unittest.main()

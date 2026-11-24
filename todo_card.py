@@ -20,13 +20,18 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Any
+
+from hermes_constants import get_hermes_home
 
 from . import card_schema, show_tool
 
 logger = logging.getLogger(__name__)
 
 LIVE_NAME = "hermes-todo"
+STATE_NAME = "todo.json"
 MAX_ITEMS = 40
 MAX_MARKDOWN = 6000          # a board's Markdown body, under the store's own limit                 # the checklist schema's own cap
 MAX_TEXT = 120                 # its per-item cap
@@ -153,6 +158,32 @@ def render_card(rows: list[dict[str, Any]], total: int | None = None) -> dict[st
     if dropped:
         title += " (%d not shown)" % dropped
     return {"type": "checklist", "title": _clean(title, MAX_TITLE), "live": LIVE_NAME, "checklist": items}
+
+
+def save(result: Any) -> bool:
+    """Persist the list so a restart, a new session or the card publisher can rebuild it.
+
+    The built-in ``todo_list`` keeps its state on the AIAgent, in memory: nothing writes it to
+    disk, so after a gateway restart the list is gone and the phone keeps the last card it was
+    given -- or, when the card registry was cleared, nothing at all. That is exactly the gap this
+    file closes on the Conduit side; ``todo.json`` closes it on the host side.
+
+    Atomic replace, bounded, and never raising: a list that cannot be written must not fail a turn.
+    """
+    try:
+        rows = parse(result)
+        if not rows:
+            return False
+        home = Path(get_hermes_home())
+        path = home / STATE_NAME
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"version": 1, "rows": rows}, ensure_ascii=False, indent=1),
+                       encoding="utf-8")
+        os.replace(tmp, path)
+        return True
+    except Exception:  # noqa: BLE001 - persistence is best-effort, like the card itself
+        logger.debug("conduit_push: todo list not saved", exc_info=True)
+        return False
 
 
 def push(result: Any, session_id: Any) -> bool:

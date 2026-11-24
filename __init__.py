@@ -421,6 +421,7 @@ def _post_tool_call(**kwargs: Any) -> None:
     # per-session tool state handed to desktop clients as todo_state; Conduit read nothing of it, so
     # the phone could see that a planning step ran and never what the plan was.
     if not forks.inside() and kwargs.get("tool_name") in ("todo_list", "todo"):
+        _quietly(functools.partial(todo_card.save, kwargs.get("result")))
         _quietly(functools.partial(todo_card.push, kwargs.get("result"), _text(kwargs.get("session_id"))))
     # Every session counts, subagents and cron runs included (3.6).
     try:

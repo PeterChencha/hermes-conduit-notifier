@@ -13,6 +13,12 @@ checks it). The format is fixed, because Conduit reads it:
 - One line per change, starting with `- `. Fixes say what goes wrong without
   the update. Plain words: these show on a phone.
 
+## 0.195.9 (2026-11-25)
+
+### Fixes
+
+- A gateway restart no longer loses the session's todo list on the host: each todo edit writes `todo.json` beside the other Conduit state, where before only the in-memory session held it.
+
 ## 0.195.8 (2026-11-25)
 
 ### New and improved
